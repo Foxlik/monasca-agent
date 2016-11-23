@@ -36,19 +36,55 @@ class Cpu(checks.AgentCheck):
         cpu_times = psutil.cpu_times(percpu=False)
         cpu_perc = psutil.cpu_percent(interval=None, percpu=False)
 
-        data = {'cpu.user_perc': cpu_stats.user + cpu_stats.nice,
-                'cpu.system_perc': cpu_stats.system + cpu_stats.irq + cpu_stats.softirq,
-                'cpu.wait_perc': cpu_stats.iowait,
-                'cpu.idle_perc': cpu_stats.idle,
-                'cpu.stolen_perc': cpu_stats.steal,
-                'cpu.percent': cpu_perc,
-                'cpu.idle_time': cpu_times.idle,
-                'cpu.wait_time': cpu_times.iowait,
-                'cpu.user_time': cpu_times.user + cpu_times.nice,
-                'cpu.system_time': cpu_times.system + cpu_times.irq + cpu_times.softirq}
+	if not instance.get("detailed_stats", False):
+            data = {'cpu.user_perc': cpu_stats.user + cpu_stats.nice,
+                    'cpu.system_perc': cpu_stats.system + cpu_stats.irq + cpu_stats.softirq,
+                    'cpu.wait_perc': cpu_stats.iowait,
+                    'cpu.idle_perc': cpu_stats.idle,
+                    'cpu.stolen_perc': cpu_stats.steal,
+                    'cpu.percent': cpu_perc,
+                    'cpu.idle_time': cpu_times.idle,
+                    'cpu.wait_time': cpu_times.iowait,
+                    'cpu.user_time': cpu_times.user + cpu_times.nice,
+                    'cpu.system_time': cpu_times.system + cpu_times.irq + cpu_times.softirq,
+                    'cpu.guest_time': cpu_times.guest + cpu_timest.guest_nice }
+            if 'guest' in cpu_stats._fields and 'guest_nice' in cpu_stats._fields:
+                data['cpu.guest_perc'] = cpu_stats.guest + cpu_stats.guest_nice
+                data['cpu.user_perc'] = cpu_stats.user + cpu_stats.nice - cpu_stats.guest - cpu_stats.guest_nice
+                data['cpu.guest_time'] = cpu_times.guest + cpu_times.guest_nice
+                data['cpu.user_time'] = cpu_times.user + cpu_times.nice - cpu_times.guest - cpu_times.guest_nice
+        else:
+            data = {'cpu.user_perc': cpu_stats.user,
+                    'cpu.nice_perc': cpu_stats.nice,
+                    'cpu.system_perc': cpu_stats.system,
+                    'cpu.irq_perc': cpu_stats.irq,
+                    'cpu.softirq_perc': cpu_stats.softirq,
+                    'cpu.wait_perc': cpu_stats.iowait,
+                    'cpu.idle_perc': cpu_stats.idle,
+                    'cpu.stolen_perc': cpu_stats.steal,
+                    'cpu.percent': cpu_perc,
+                    'cpu.user_time': cpu_times.user,
+                    'cpu.nice_time': cpu_times.nice,
+                    'cpu.system_time': cpu_times.system,
+                    'cpu.irq_time': cpu_times.irq,
+                    'cpu.softirq_time': cpu_times.softirq,
+                    'cpu.wait_time': cpu_times.iowait,
+                    'cpu.idle_time': cpu_times.idle,
+                    'cpu.stolen_time': cpu_times.steal }
+            if 'guest' in cpu_stats._fields and 'guest_nice' in cpu_stats._fields:
+                data['cpu.guest_perc'] = cpu_stats.guest
+                data['cpu.guest_nice_perc'] = cpu_stats.guest_nice
+                data['cpu.user_perc'] = cpu_stats.user - cpu_stats.guest
+                data['cpu.nice_perc'] = cpu_stats.nice - cpu_stats.guest_nice
+                data['cpu.guest_time'] = cpu_times.guest
+                data['cpu.guest_nice_time'] = cpu_times.guest_nice
+                data['cpu.user_time'] = cpu_times.user - cpu_times.guest
+                data['cpu.nice_time'] = cpu_times.nice - cpu_times.guest_nice
+
+
 
         # Call lscpu command to get cpu frequency
-        self._add_cpu_freq(data)
+        self._add_cpu_freq(data,instance)
 
         for key, value in data.iteritems():
             if data[key] is None or instance.get('cpu_idle_only') and 'idle_perc' not in key:
@@ -61,13 +97,13 @@ class Cpu(checks.AgentCheck):
             num_of_metrics += 1
         log.debug('Collected {0} cpu metrics'.format(num_of_metrics))
 
-    def _add_cpu_freq(self, data):
+    def _add_cpu_freq(self, data, instance):
         try:
             lscpu_command = subprocess.Popen('lscpu', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             lscpu_output = lscpu_command.communicate()[0].decode(
                 encoding='UTF-8')
             cpu_freq_output = re.search("(CPU MHz:.*?(\d+\.\d+)\n)", lscpu_output)
             cpu_freq = float(cpu_freq_output.group(2))
-            data['cpu.frequency_mhz'] = cpu_freq
+            data['cpu.frequency_mhz'] = cpu_freq * instance.get('freq_multiplier', 1)
         except Exception:
             log.exception('Cannot extract CPU MHz information using lscpu')
